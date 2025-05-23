@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("MonaBackendClean")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+bd2993c4dac7d2cb8b1708aadf260514dded1d1a")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+b8ad1214736b65e2589016eec31131c16d7e45f4")]
 [assembly: System.Reflection.AssemblyProductAttribute("MonaBackendClean")]
 [assembly: System.Reflection.AssemblyTitleAttribute("MonaBackendClean")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]
