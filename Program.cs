@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Net.WebSockets;
 using System.Net;
+using System.Net.WebSockets;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Concurrent;
@@ -24,12 +24,14 @@ class Program
 
     static async Task StartWebSocketServer()
     {
-        var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
         HttpListener listener = new HttpListener();
-        listener.Prefixes.Add($"http://+:{port}/");
-        listener.Start();
 
-        Console.WriteLine($"✅ WebSocket server listening on http://localhost:{port}/");
+        // Use Render's default PORT (10000) if available
+        var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
+        listener.Prefixes.Add($"http://0.0.0.0:{port}/ws/");
+
+        listener.Start();
+        Console.WriteLine($"\u2705 WebSocket server listening on http://0.0.0.0:{port}/ws/");
 
         while (true)
         {
@@ -37,17 +39,13 @@ class Program
             if (context.Request.IsWebSocketRequest)
             {
                 var wsContext = await context.AcceptWebSocketAsync(null);
-                Console.WriteLine("🌐 Unity client connected.");
+                Console.WriteLine("\u1F310 Unity client connected.");
                 clients.Add(wsContext.WebSocket);
             }
             else
             {
-                // ✅ Respond with a message at root or non-WebSocket requests
-                var message = Encoding.UTF8.GetBytes("👋 MonaBackend is running!");
-                context.Response.ContentType = "text/plain";
-                context.Response.ContentLength64 = message.Length;
-                await context.Response.OutputStream.WriteAsync(message, 0, message.Length);
-                context.Response.OutputStream.Close();
+                context.Response.StatusCode = 400;
+                context.Response.Close();
             }
         }
     }
@@ -58,13 +56,13 @@ class Program
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
 
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-        var filter = eventHandler.CreateFilterInput(BlockParameter.CreateLatest(), BlockParameter.CreateLatest());
+        var filterAll = eventHandler.CreateFilterInput(BlockParameter.CreateLatest(), BlockParameter.CreateLatest());
 
-        Console.WriteLine("👂 Listening for VisibilityChanged events...");
+        Console.WriteLine("\uD83D\uDC42 Listening for VisibilityChanged events...");
 
         while (true)
         {
-            var logs = await eventHandler.GetAllChangesAsync(filter);
+            var logs = await eventHandler.GetAllChangesAsync(filterAll);
             foreach (var ev in logs)
             {
                 bool isVisible = ev.Event.Visible;
@@ -82,7 +80,7 @@ class Program
                 }
             }
 
-            await Task.Delay(5000); // poll every 5 seconds
+            await Task.Delay(5000);
         }
     }
 
