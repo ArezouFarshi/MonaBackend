@@ -1,11 +1,15 @@
-# Use official .NET runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:9.0
-
-# Set the working directory inside the container
+FROM mcr.microsoft.com/dotnet/aspnet:9.0-preview AS base
 WORKDIR /app
 
-# Copy the compiled output from your local machine into the container
-COPY bin/Debug/net9.0/ .
+FROM mcr.microsoft.com/dotnet/sdk:9.0-preview AS build
+WORKDIR /src
+COPY . .
+RUN dotnet publish MonaBackendClean.csproj -c Release -o /app/publish
 
-# Set the command to run your application
+FROM base AS final
+WORKDIR /app
+COPY --from=build /app/publish .
+EXPOSE 5000
+ENV ASPNETCORE_URLS=http://+:5000
 ENTRYPOINT ["dotnet", "MonaBackendClean.dll"]
+
