@@ -1,6 +1,6 @@
 ﻿using System;
-using System.Net;
 using System.Net.WebSockets;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Concurrent;
@@ -22,12 +22,14 @@ class Program
 {
     static ConcurrentBag<WebSocket> clients = new ConcurrentBag<WebSocket>();
 
-    static async Task StartHttpServer()
+    static async Task StartWebSocketServer()
     {
+        var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
         HttpListener listener = new HttpListener();
-        listener.Prefixes.Add($"http://0.0.0.0:{Environment.GetEnvironmentVariable("PORT") ?? "10000"}/");
+        listener.Prefixes.Add($"http://+:{port}/");
         listener.Start();
-        Console.WriteLine("🌐 HTTP/WebSocket server listening on /");
+
+        Console.WriteLine($"✅ WebSocket server listening on http://0.0.0.0:{port}/");
 
         while (true)
         {
@@ -35,21 +37,17 @@ class Program
             if (context.Request.IsWebSocketRequest)
             {
                 var wsContext = await context.AcceptWebSocketAsync(null);
-                Console.WriteLine("🔌 Unity WebSocket connected.");
+                Console.WriteLine("🌐 Unity client connected.");
                 clients.Add(wsContext.WebSocket);
-            }
-            else if (context.Request.HttpMethod == "GET")
-            {
-                byte[] buffer = Encoding.UTF8.GetBytes("✅ MonaBackend is running!");
-                context.Response.ContentLength64 = buffer.Length;
-                context.Response.ContentType = "text/plain";
-                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-                context.Response.OutputStream.Close();
             }
             else
             {
-                context.Response.StatusCode = 404;
-                context.Response.Close();
+                // Respond to HTTP GET on root path
+                var message = Encoding.UTF8.GetBytes("👋 MonaBackend is running!");
+                context.Response.ContentType = "text/plain";
+                context.Response.ContentLength64 = message.Length;
+                await context.Response.OutputStream.WriteAsync(message, 0, message.Length);
+                context.Response.OutputStream.Close();
             }
         }
     }
@@ -58,15 +56,15 @@ class Program
     {
         var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
-        var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
 
-        var filterAll = eventHandler.CreateFilterInput(BlockParameter.CreateLatest(), BlockParameter.CreateLatest());
+        var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
+        var filter = eventHandler.CreateFilterInput(BlockParameter.CreateLatest(), BlockParameter.CreateLatest());
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
 
         while (true)
         {
-            var logs = await eventHandler.GetAllChangesAsync(filterAll);
+            var logs = await eventHandler.GetAllChangesAsync(filter);
             foreach (var ev in logs)
             {
                 bool isVisible = ev.Event.Visible;
@@ -90,6 +88,6 @@ class Program
 
     static async Task Main(string[] args)
     {
-        await Task.WhenAll(StartHttpServer(), StartBlockchainListener());
+        await Task.WhenAll(StartWebSocketServer(), StartBlockchainListener());
     }
 }
