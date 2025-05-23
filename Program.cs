@@ -28,13 +28,13 @@ class Program
         listener.Prefixes.Add("http://*:5000/");
         listener.Prefixes.Add("http://*:5000/ws/");
         listener.Start();
-        Console.WriteLine("✅ WebSocket server listening on http://localhost:5000/");
+        Console.WriteLine("✅ WebSocket server listening on http://localhost:5000/ws/");
 
         while (true)
         {
             var context = await listener.GetContextAsync();
 
-            if (context.Request.IsWebSocketRequest && context.Request.RawUrl == "/ws/")
+            if (context.Request.IsWebSocketRequest)
             {
                 var wsContext = await context.AcceptWebSocketAsync(null);
                 Console.WriteLine("🌐 Unity client connected.");
