@@ -87,3 +87,4 @@ C:\Users\AREZOU\MonaBackendClean\obj\Debug\net9.0\MonaBackendClean.pdb
 C:\Users\AREZOU\MonaBackendClean\obj\Debug\net9.0\MonaBackendClean.genruntimeconfig.cache
 C:\Users\AREZOU\MonaBackendClean\obj\Debug\net9.0\ref\MonaBackendClean.dll
 C:\Users\AREZOU\MonaBackendClean\bin\Debug\net9.0\Nethereum.JsonRpc.WebSocketClient.dll
+C:\Users\AREZOU\MonaBackendClean\obj\Debug\net9.0\MonaBackendClean.sourcelink.json
