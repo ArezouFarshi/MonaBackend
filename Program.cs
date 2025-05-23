@@ -25,22 +25,32 @@ class Program
     static async Task StartWebSocketServer()
     {
         HttpListener listener = new HttpListener();
+        listener.Prefixes.Add("http://*:5000/");
         listener.Prefixes.Add("http://*:5000/ws/");
         listener.Start();
-        Console.WriteLine("✅ WebSocket server listening on http://localhost:5000/ws/");
+        Console.WriteLine("✅ WebSocket server listening on http://localhost:5000/");
 
         while (true)
         {
             var context = await listener.GetContextAsync();
-            if (context.Request.IsWebSocketRequest)
+
+            if (context.Request.IsWebSocketRequest && context.Request.RawUrl == "/ws/")
             {
                 var wsContext = await context.AcceptWebSocketAsync(null);
                 Console.WriteLine("🌐 Unity client connected.");
                 clients.Add(wsContext.WebSocket);
             }
+            else if (context.Request.RawUrl == "/")
+            {
+                var buffer = Encoding.UTF8.GetBytes("✅ Mona backend is running!");
+                context.Response.ContentLength64 = buffer.Length;
+                context.Response.ContentType = "text/plain";
+                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                context.Response.OutputStream.Close();
+            }
             else
             {
-                context.Response.StatusCode = 400;
+                context.Response.StatusCode = 404;
                 context.Response.Close();
             }
         }
@@ -52,8 +62,6 @@ class Program
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
 
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-
-        // ✅ ONLY listen to new events (no historical logs)
         var filterAll = eventHandler.CreateFilterInput(BlockParameter.CreateLatest(), BlockParameter.CreateLatest());
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
