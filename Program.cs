@@ -22,30 +22,34 @@ class Program
 {
     static ConcurrentBag<WebSocket> clients = new ConcurrentBag<WebSocket>();
 
-    static async Task StartWebSocketServer()
+    static async Task StartHttpServer()
     {
         HttpListener listener = new HttpListener();
-        listener.Prefixes.Add("http://*:5000/");
-        listener.Prefixes.Add("http://*:5000/ws/");
+
+        listener.Prefixes.Add("http://0.0.0.0:5000/ws/");
+        listener.Prefixes.Add("http://0.0.0.0:5000/");
+
         listener.Start();
-        Console.WriteLine("✅ WebSocket server listening on http://localhost:5000/ws/");
+        Console.WriteLine("✅ WebSocket server listening on http://0.0.0.0:5000/ws/");
 
         while (true)
         {
             var context = await listener.GetContextAsync();
 
-            if (context.Request.IsWebSocketRequest)
+            // WebSocket request
+            if (context.Request.IsWebSocketRequest && context.Request.RawUrl == "/ws/")
             {
                 var wsContext = await context.AcceptWebSocketAsync(null);
                 Console.WriteLine("🌐 Unity client connected.");
                 clients.Add(wsContext.WebSocket);
             }
-            else if (context.Request.RawUrl == "/")
+            // Root path HTTP GET handler
+            else if (context.Request.RawUrl == "/" && context.Request.HttpMethod == "GET")
             {
-                var buffer = Encoding.UTF8.GetBytes("✅ Mona backend is running!");
-                context.Response.ContentLength64 = buffer.Length;
+                var message = Encoding.UTF8.GetBytes("✅ Mona backend is running!");
                 context.Response.ContentType = "text/plain";
-                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                context.Response.ContentLength64 = message.Length;
+                await context.Response.OutputStream.WriteAsync(message, 0, message.Length);
                 context.Response.OutputStream.Close();
             }
             else
@@ -60,8 +64,8 @@ class Program
     {
         var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
-
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
+
         var filterAll = eventHandler.CreateFilterInput(BlockParameter.CreateLatest(), BlockParameter.CreateLatest());
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
@@ -92,6 +96,6 @@ class Program
 
     static async Task Main(string[] args)
     {
-        await Task.WhenAll(StartWebSocketServer(), StartBlockchainListener());
+        await Task.WhenAll(StartHttpServer(), StartBlockchainListener());
     }
 }
