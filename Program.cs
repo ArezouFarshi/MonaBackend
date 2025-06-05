@@ -42,6 +42,7 @@ class Program
             }
             else
             {
+                // Respond to HTTP GET on root path
                 var message = Encoding.UTF8.GetBytes("👋 MonaBackend is running!");
                 context.Response.ContentType = "text/plain";
                 context.Response.ContentLength64 = message.Length;
@@ -53,49 +54,43 @@ class Program
 
     static async Task StartBlockchainListener()
     {
-        var infuraUrl = "https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9"; // <<-- CHANGE if needed
-        var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240"; // <<-- CHANGE if needed
-        var web3 = new Web3(infuraUrl);
+        // ---- UPDATE THESE WITH YOUR OWN DETAILS! ----
+        var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
+        var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
+        // ---------------------------------------------
 
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-
-        // Start from block 0 (Earliest) and move forward, so you won't miss anything.
-        var lastCheckedBlock = (await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync()).Value;
+        var filter = eventHandler.CreateFilterInput();
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
 
+        string lastTxHash = "";
+
         while (true)
         {
-            var latestBlockNumber = (await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync()).Value;
-            if (latestBlockNumber > lastCheckedBlock)
+            var logs = await eventHandler.GetAllChangesAsync(filter);
+            foreach (var ev in logs)
             {
-                var filter = eventHandler.CreateFilterInput(
-                    new BlockParameter(lastCheckedBlock + 1), // Start from the next block
-                    new BlockParameter(latestBlockNumber)      // Up to the latest
-                );
+                if (ev.Log.TransactionHash == lastTxHash)
+                    continue; // prevent sending the same event twice
 
-                var logs = await eventHandler.GetAllChangesAsync(filter);
-                foreach (var ev in logs)
+                lastTxHash = ev.Log.TransactionHash;
+                bool isVisible = ev.Event.Visible;
+                Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
+
+                var json = JsonSerializer.Serialize(new { visible = isVisible });
+                var message = Encoding.UTF8.GetBytes(json);
+
+                foreach (var socket in clients)
                 {
-                    bool isVisible = ev.Event.Visible;
-                    Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible} (Block: {ev.Log.BlockNumber.Value})");
-
-                    var json = JsonSerializer.Serialize(new { visible = isVisible });
-                    var message = Encoding.UTF8.GetBytes(json);
-
-                    foreach (var socket in clients)
+                    if (socket.State == WebSocketState.Open)
                     {
-                        if (socket.State == WebSocketState.Open)
-                        {
-                            await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
-                            Console.WriteLine("➡️ Sent message to Unity clients.");
-                        }
+                        await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
                     }
                 }
-                lastCheckedBlock = latestBlockNumber;
             }
 
-            await Task.Delay(3000); // Poll every 3 seconds
+            await Task.Delay(5000); // Poll every 5 seconds
         }
     }
 
