@@ -53,7 +53,7 @@ class Program
 
     static async Task StartBlockchainListener()
     {
-        var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
+        var web3 = new Web3("https://sepolia.infura.io/v3/51bc36040f314e85bf103ff18c570993");
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
 
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
