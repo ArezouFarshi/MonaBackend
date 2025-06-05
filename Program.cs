@@ -42,7 +42,6 @@ class Program
             }
             else
             {
-                // Respond to HTTP GET on root path
                 var message = Encoding.UTF8.GetBytes("👋 MonaBackend is running!");
                 context.Response.ContentType = "text/plain";
                 context.Response.ContentLength64 = message.Length;
@@ -54,28 +53,32 @@ class Program
 
     static async Task StartBlockchainListener()
     {
-        // ✅ Your Infura HTTPS endpoint:
-        var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
-        // ✅ Your contract address:
-        var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
+        var infuraUrl = "https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9"; // <<-- CHANGE if needed
+        var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240"; // <<-- CHANGE if needed
+        var web3 = new Web3(infuraUrl);
 
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-        var filter = eventHandler.CreateFilterInput(BlockParameter.CreateEarliest(), BlockParameter.CreateLatest());
+
+        // Start from block 0 (Earliest) and move forward, so you won't miss anything.
+        var lastCheckedBlock = (await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync()).Value;
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
 
         while (true)
         {
-            try
+            var latestBlockNumber = (await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync()).Value;
+            if (latestBlockNumber > lastCheckedBlock)
             {
-                Console.WriteLine("🔁 Polling for events from Infura...");
-                var logs = await eventHandler.GetAllChangesAsync(filter);
-                Console.WriteLine($"🔎 Poll result: {logs.Count} events");
+                var filter = eventHandler.CreateFilterInput(
+                    new BlockParameter(lastCheckedBlock + 1), // Start from the next block
+                    new BlockParameter(latestBlockNumber)      // Up to the latest
+                );
 
+                var logs = await eventHandler.GetAllChangesAsync(filter);
                 foreach (var ev in logs)
                 {
                     bool isVisible = ev.Event.Visible;
-                    Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
+                    Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible} (Block: {ev.Log.BlockNumber.Value})");
 
                     var json = JsonSerializer.Serialize(new { visible = isVisible });
                     var message = Encoding.UTF8.GetBytes(json);
@@ -85,16 +88,14 @@ class Program
                         if (socket.State == WebSocketState.Open)
                         {
                             await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
+                            Console.WriteLine("➡️ Sent message to Unity clients.");
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("❌ Blockchain polling error: " + ex.Message);
+                lastCheckedBlock = latestBlockNumber;
             }
 
-            await Task.Delay(5000);
+            await Task.Delay(3000); // Poll every 3 seconds
         }
     }
 
