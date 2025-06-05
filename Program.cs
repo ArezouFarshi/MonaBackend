@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Net.WebSockets;
 using System.Net;
 using System.Text;
@@ -54,32 +54,44 @@ class Program
 
     static async Task StartBlockchainListener()
     {
-        var web3 = new Web3("https://sepolia.infura.io/v3/51bc36040f314e85bf103ff18c570993");
+        // ✅ Your Infura HTTPS endpoint:
+        var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
+        // ✅ Your contract address:
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
 
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-        var filter = eventHandler.CreateFilterInput(BlockParameter.CreateLatest(), BlockParameter.CreateLatest());
+        var filter = eventHandler.CreateFilterInput(BlockParameter.CreateEarliest(), BlockParameter.CreateLatest());
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
 
         while (true)
         {
-            var logs = await eventHandler.GetAllChangesAsync(filter);
-            foreach (var ev in logs)
+            try
             {
-                bool isVisible = ev.Event.Visible;
-                Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
+                Console.WriteLine("🔁 Polling for events from Infura...");
+                var logs = await eventHandler.GetAllChangesAsync(filter);
+                Console.WriteLine($"🔎 Poll result: {logs.Count} events");
 
-                var json = JsonSerializer.Serialize(new { visible = isVisible });
-                var message = Encoding.UTF8.GetBytes(json);
-
-                foreach (var socket in clients)
+                foreach (var ev in logs)
                 {
-                    if (socket.State == WebSocketState.Open)
+                    bool isVisible = ev.Event.Visible;
+                    Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
+
+                    var json = JsonSerializer.Serialize(new { visible = isVisible });
+                    var message = Encoding.UTF8.GetBytes(json);
+
+                    foreach (var socket in clients)
                     {
-                        await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
+                        if (socket.State == WebSocketState.Open)
+                        {
+                            await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
+                        }
                     }
                 }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("❌ Blockchain polling error: " + ex.Message);
             }
 
             await Task.Delay(5000);
