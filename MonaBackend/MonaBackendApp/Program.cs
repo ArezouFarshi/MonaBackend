@@ -1,97 +1,85 @@
-﻿using System;
-using System.Net.WebSockets;
-using System.Net;
+﻿using System.Net.WebSockets;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.Hosting;
+using Microsoft.AspNetCore.Http;
 using System.Text;
 using System.Text.Json;
 using System.Collections.Concurrent;
-using System.Threading;
-using System.Threading.Tasks;
-using Nethereum.Web3;
+using Nethereum.JsonRpc.WebSocketStreamingClient;
 using Nethereum.RPC.Eth.DTOs;
-using Nethereum.ABI.FunctionEncoding.Attributes;
-using Nethereum.Contracts;
+using Nethereum.ABI.Model;
+using Nethereum.ABI.FunctionEncoding;
 
-[Event("VisibilityChanged")]
-public class VisibilityChangedEventDTO : IEventDTO
+var builder = WebApplication.CreateBuilder(args);
+var app = builder.Build();
+
+var clients = new ConcurrentBag<WebSocket>();
+
+app.UseWebSockets();
+
+app.Use(async (context, next) =>
 {
-    [Parameter("bool", "visible", 1, false)]
-    public bool Visible { get; set; }
-}
-
-class Program
-{
-    static ConcurrentBag<WebSocket> clients = new ConcurrentBag<WebSocket>();
-
-    static async Task StartWebSocketServer()
+    if (context.Request.Path == "/ws" && context.WebSockets.IsWebSocketRequest)
     {
-        var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
-        HttpListener listener = new HttpListener();
-        listener.Prefixes.Add($"http://+:{port}/");
-        listener.Start();
+        var ws = await context.WebSockets.AcceptWebSocketAsync();
+        clients.Add(ws);
+        Console.WriteLine("Client connected");
 
-        Console.WriteLine($"✅ WebSocket server listening on http://0.0.0.0:{port}/");
-
-        while (true)
+        var buffer = new byte[1024 * 4];
+        while (ws.State == WebSocketState.Open)
         {
-            var context = await listener.GetContextAsync();
-            if (context.Request.IsWebSocketRequest)
+            var result = await ws.ReceiveAsync(new ArraySegment<byte>(buffer), CancellationToken.None);
+            if (result.MessageType == WebSocketMessageType.Close)
             {
-                var wsContext = await context.AcceptWebSocketAsync(null);
-                Console.WriteLine("🌐 Unity client connected.");
-                clients.Add(wsContext.WebSocket);
-            }
-            else
-            {
-                var message = Encoding.UTF8.GetBytes("👋 MonaBackend is running!");
-                context.Response.ContentType = "text/plain";
-                context.Response.ContentLength64 = message.Length;
-                await context.Response.OutputStream.WriteAsync(message, 0, message.Length);
-                context.Response.OutputStream.Close();
+                await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closed", CancellationToken.None);
+                break;
             }
         }
     }
-
-    static async Task StartBlockchainListener()
+    else
     {
-        var web3 = new Web3("https://sepolia.infura.io/v3/51bc36040f314e85bf103ff18c570993");
-        var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
+        await next();
+    }
+});
 
-        var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-        var lastBlock = await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync();
+_ = Task.Run(async () =>
+{
+    var wsClient = new StreamingWebSocketClient("wss://sepolia.infura.io/ws/v3/51bc36040f314e85bf103ff18c570993");
 
-        Console.WriteLine("👂 Listening for VisibilityChanged events starting from block " + lastBlock.Value);
+    var ethLogs = new EthLogsObservableSubscription(wsClient);
 
-        while (true)
+    ethLogs.GetSubscriptionDataResponsesAsObservable().Subscribe(log =>
+    {
+        var abi = new EventABI("VisibilityChanged", false);
+        abi.InputParameters = new[] { new Parameter("bool", "visible", 1, false) };
+
+        var decoder = new EventTopicDecoder();
+        var decoded = decoder.DecodeDefaultTopics(abi, log);
+
+        if (decoded.Count > 0)
         {
-            var newBlock = await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync();
+            var visible = (bool)decoded[0].Result;
+            Console.WriteLine($"[EVENT] Visibility: {visible}");
 
-            var filter = eventHandler.CreateFilterInput(new BlockParameter(lastBlock), new BlockParameter(newBlock));
-            var logs = await eventHandler.GetAllChangesAsync(filter);
+            var json = JsonSerializer.Serialize(new { visible });
+            var bytes = Encoding.UTF8.GetBytes(json);
 
-            foreach (var ev in logs)
+            foreach (var socket in clients)
             {
-                bool isVisible = ev.Event.Visible;
-                Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
-
-                var json = JsonSerializer.Serialize(new { visible = isVisible });
-                var message = Encoding.UTF8.GetBytes(json);
-
-                foreach (var socket in clients)
+                if (socket.State == WebSocketState.Open)
                 {
-                    if (socket.State == WebSocketState.Open)
-                    {
-                        await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
-                    }
+                    socket.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, CancellationToken.None);
                 }
             }
-
-            lastBlock = newBlock;
-            await Task.Delay(5000);
         }
-    }
+    });
 
-    static async Task Main(string[] args)
+    await wsClient.StartAsync();
+    await ethLogs.SubscribeAsync(new NewFilterInput
     {
-        await Task.WhenAll(StartWebSocketServer(), StartBlockchainListener());
-    }
-}
+        Address = new[] { "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240" }
+    });
+});
+
+app.Run("http://0.0.0.0:5000");
