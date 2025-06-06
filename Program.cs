@@ -6,7 +6,6 @@ using System.Text.Json;
 using System.Collections.Concurrent;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Numerics; // ← THIS FIXES THE 'BigInteger' ERROR!
 using Nethereum.Web3;
 using Nethereum.RPC.Eth.DTOs;
 using Nethereum.ABI.FunctionEncoding.Attributes;
@@ -55,43 +54,51 @@ class Program
 
     static async Task StartBlockchainListener()
     {
-        // ---- UPDATE THESE WITH YOUR OWN DETAILS! ----
+        // --- Your addresses ---
         var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
-        // ---------------------------------------------
-
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-        var filter = eventHandler.CreateFilterInput();
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
 
-        string lastTxHash = "";
+        // Start from the latest block to avoid fetching old events
+        var lastBlock = await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync();
 
         while (true)
         {
-            var logs = await eventHandler.GetAllChangesAsync(filter);
-            foreach (var ev in logs)
+            var currentBlock = await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync();
+
+            if (currentBlock.Value > lastBlock.Value)
             {
-                if (ev.Log.TransactionHash == lastTxHash)
-                    continue; // prevent sending the same event twice
+                // Only get events from the new blocks
+                var filter = eventHandler.CreateFilterInput(
+                    new BlockParameter(lastBlock.Value + 1),
+                    new BlockParameter(currentBlock)
+                );
 
-                lastTxHash = ev.Log.TransactionHash;
-                bool isVisible = ev.Event.Visible;
-                Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
+                var logs = await eventHandler.GetAllChangesAsync(filter);
 
-                var json = JsonSerializer.Serialize(new { visible = isVisible });
-                var message = Encoding.UTF8.GetBytes(json);
-
-                foreach (var socket in clients)
+                foreach (var ev in logs)
                 {
-                    if (socket.State == WebSocketState.Open)
+                    bool isVisible = ev.Event.Visible;
+                    Console.WriteLine($"[Blockchain] NEW VisibilityChanged: {isVisible}");
+
+                    var json = JsonSerializer.Serialize(new { visible = isVisible });
+                    var message = Encoding.UTF8.GetBytes(json);
+
+                    foreach (var socket in clients)
                     {
-                        await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
+                        if (socket.State == WebSocketState.Open)
+                        {
+                            await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
+                        }
                     }
                 }
+
+                lastBlock = currentBlock;
             }
 
-            await Task.Delay(5000); // Poll every 5 seconds
+            await Task.Delay(20000); // Poll every 20 seconds (tune as needed)
         }
     }
 
