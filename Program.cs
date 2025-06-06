@@ -54,38 +54,49 @@ class Program
 
     static async Task StartBlockchainListener()
     {
-        // ---- UPDATE THESE WITH YOUR OWN DETAILS! ----
+        // ---- DO NOT EDIT THESE! ----
         var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
-        // ---------------------------------------------
+        // ----------------------------
 
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
-        var filter = eventHandler.CreateFilterInput();
+
+        // Track the last processed block and logIndex
+        BigInteger lastBlock = 0;
+        BigInteger lastLogIndex = -1;
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
 
-        string lastTxHash = "";
-
         while (true)
         {
+            // Always fetch events from the last seen block onward
+            var filter = eventHandler.CreateFilterInput(new BlockParameter(lastBlock));
             var logs = await eventHandler.GetAllChangesAsync(filter);
+
             foreach (var ev in logs)
             {
-                if (ev.Log.TransactionHash == lastTxHash)
-                    continue; // prevent sending the same event twice
+                var blockNumber = (long)ev.Log.BlockNumber.Value;
+                var logIndex = (long)ev.Log.LogIndex.Value;
 
-                lastTxHash = ev.Log.TransactionHash;
-                bool isVisible = ev.Event.Visible;
-                Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
-
-                var json = JsonSerializer.Serialize(new { visible = isVisible });
-                var message = Encoding.UTF8.GetBytes(json);
-
-                foreach (var socket in clients)
+                // Only process if this is after last processed, or a new log in the same block
+                if (blockNumber > (long)lastBlock ||
+                    (blockNumber == (long)lastBlock && logIndex > (long)lastLogIndex))
                 {
-                    if (socket.State == WebSocketState.Open)
+                    lastBlock = ev.Log.BlockNumber.Value;
+                    lastLogIndex = ev.Log.LogIndex.Value;
+
+                    bool isVisible = ev.Event.Visible;
+                    Console.WriteLine($"[Blockchain] VisibilityChanged: {isVisible}");
+
+                    var json = JsonSerializer.Serialize(new { visible = isVisible });
+                    var message = Encoding.UTF8.GetBytes(json);
+
+                    foreach (var socket in clients)
                     {
-                        await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
+                        if (socket.State == WebSocketState.Open)
+                        {
+                            await socket.SendAsync(new ArraySegment<byte>(message), WebSocketMessageType.Text, true, CancellationToken.None);
+                        }
                     }
                 }
             }
