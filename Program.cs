@@ -10,6 +10,7 @@ using Nethereum.Web3;
 using Nethereum.RPC.Eth.DTOs;
 using Nethereum.ABI.FunctionEncoding.Attributes;
 using Nethereum.Contracts;
+using Nethereum.Hex.HexTypes; // <--- CRUCIAL FIX
 
 [Event("VisibilityChanged")]
 public class VisibilityChangedEventDTO : IEventDTO
@@ -54,7 +55,6 @@ class Program
 
     static async Task StartBlockchainListener()
     {
-        // --- Your addresses ---
         var web3 = new Web3("https://sepolia.infura.io/v3/6ad85a144d0445a3b181add73f6a55d9");
         var contractAddress = "0x4F3AC69d127A8b0Ad3b9dFaBdc3A19DC3B34c240";
         var eventHandler = web3.Eth.GetEvent<VisibilityChangedEventDTO>(contractAddress);
@@ -70,10 +70,10 @@ class Program
 
             if (currentBlock.Value > lastBlock.Value)
             {
-                // Only get events from the new blocks
+                // CONVERT BigInteger to HexBigInteger for BlockParameter
                 var filter = eventHandler.CreateFilterInput(
-                    new BlockParameter(lastBlock.Value + 1),
-                    new BlockParameter(currentBlock)
+                    new BlockParameter(new HexBigInteger(lastBlock.Value + 1)),
+                    new BlockParameter(new HexBigInteger(currentBlock.Value))
                 );
 
                 var logs = await eventHandler.GetAllChangesAsync(filter);
@@ -98,7 +98,7 @@ class Program
                 lastBlock = currentBlock;
             }
 
-            await Task.Delay(20000); // Poll every 20 seconds (tune as needed)
+            await Task.Delay(20000); // Poll every 20 seconds
         }
     }
 
