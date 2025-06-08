@@ -10,7 +10,7 @@ using Nethereum.Web3;
 using Nethereum.RPC.Eth.DTOs;
 using Nethereum.ABI.FunctionEncoding.Attributes;
 using Nethereum.Contracts;
-using Nethereum.Hex.HexTypes; // <--- CRUCIAL FIX
+using Nethereum.Hex.HexTypes;
 
 [Event("VisibilityChanged")]
 public class VisibilityChangedEventDTO : IEventDTO
@@ -35,15 +35,24 @@ class Program
         while (true)
         {
             var context = await listener.GetContextAsync();
+
             if (context.Request.IsWebSocketRequest)
             {
                 var wsContext = await context.AcceptWebSocketAsync(null);
                 Console.WriteLine("🌐 Unity client connected.");
                 clients.Add(wsContext.WebSocket);
             }
+            else if (context.Request.HttpMethod == "GET" && context.Request.Url.AbsolutePath == "/api/test")
+            {
+                var response = JsonSerializer.Serialize(new { status = "success", timestamp = DateTime.UtcNow });
+                var message = Encoding.UTF8.GetBytes(response);
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = message.Length;
+                await context.Response.OutputStream.WriteAsync(message, 0, message.Length);
+                context.Response.OutputStream.Close();
+            }
             else
             {
-                // Respond to HTTP GET on root path
                 var message = Encoding.UTF8.GetBytes("👋 MonaBackend is running!");
                 context.Response.ContentType = "text/plain";
                 context.Response.ContentLength64 = message.Length;
@@ -61,7 +70,6 @@ class Program
 
         Console.WriteLine("👂 Listening for VisibilityChanged events...");
 
-        // Start from the latest block to avoid fetching old events
         var lastBlock = await web3.Eth.Blocks.GetBlockNumber.SendRequestAsync();
 
         while (true)
@@ -70,7 +78,6 @@ class Program
 
             if (currentBlock.Value > lastBlock.Value)
             {
-                // CONVERT BigInteger to HexBigInteger for BlockParameter
                 var filter = eventHandler.CreateFilterInput(
                     new BlockParameter(new HexBigInteger(lastBlock.Value + 1)),
                     new BlockParameter(new HexBigInteger(currentBlock.Value))
@@ -98,7 +105,7 @@ class Program
                 lastBlock = currentBlock;
             }
 
-            await Task.Delay(20000); // Poll every 20 seconds
+            await Task.Delay(20000);
         }
     }
 
