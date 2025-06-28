@@ -23,6 +23,16 @@ class Program
 {
     static ConcurrentBag<WebSocket> clients = new ConcurrentBag<WebSocket>();
 
+    // NEW: Track the visibility state for each window group
+    static ConcurrentDictionary<string, bool> windowVisibility = new ConcurrentDictionary<string, bool>(
+        new Dictionary<string, bool>
+        {
+            ["1stStoryWindows"] = false,
+            ["2ndStoryWindows"] = false,
+            ["3rdStoryWindows"] = false,
+            ["4thStoryWindows"] = false,
+        });
+
     static async Task StartWebSocketServer()
     {
         var port = Environment.GetEnvironmentVariable("PORT") ?? "10000";
@@ -46,6 +56,16 @@ class Program
             {
                 var response = JsonSerializer.Serialize(new { status = "success", timestamp = DateTime.UtcNow });
                 var message = Encoding.UTF8.GetBytes(response);
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = message.Length;
+                await context.Response.OutputStream.WriteAsync(message, 0, message.Length);
+                context.Response.OutputStream.Close();
+            }
+            // NEW: Visibility API endpoint for Monaverse REST polling
+            else if (context.Request.HttpMethod == "GET" && context.Request.Url.AbsolutePath == "/api/visibility")
+            {
+                var visibilityJson = JsonSerializer.Serialize(windowVisibility);
+                var message = Encoding.UTF8.GetBytes(visibilityJson);
                 context.Response.ContentType = "application/json";
                 context.Response.ContentLength64 = message.Length;
                 await context.Response.OutputStream.WriteAsync(message, 0, message.Length);
@@ -89,6 +109,12 @@ class Program
                 {
                     bool isVisible = ev.Event.Visible;
                     Console.WriteLine($"[Blockchain] NEW VisibilityChanged: {isVisible}");
+
+                    // For now: update all windows the same (you can adjust logic later)
+                    windowVisibility["1stStoryWindows"] = isVisible;
+                    windowVisibility["2ndStoryWindows"] = isVisible;
+                    windowVisibility["3rdStoryWindows"] = isVisible;
+                    windowVisibility["4thStoryWindows"] = isVisible;
 
                     var json = JsonSerializer.Serialize(new { visible = isVisible });
                     var message = Encoding.UTF8.GetBytes(json);
